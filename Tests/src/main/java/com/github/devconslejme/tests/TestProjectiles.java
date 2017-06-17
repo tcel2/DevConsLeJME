@@ -28,11 +28,10 @@ package com.github.devconslejme.tests;
 
 import com.github.devconslejme.game.CharacterI;
 import com.github.devconslejme.misc.jme.ColorI;
+import com.github.devconslejme.misc.jme.PhysicsData;
 import com.github.devconslejme.misc.jme.PhysicsI;
-import com.github.devconslejme.misc.jme.PhysicsI.PhysicsData;
 import com.github.devconslejme.misc.jme.PhysicsProjectileI;
 import com.github.devconslejme.misc.jme.PhysicsProjectileI.EGun;
-import com.github.devconslejme.misc.jme.PhysicsProjectileI.PhysicsGun;
 import com.github.devconslejme.projman.SimpleApplicationAndStateAbs;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
@@ -129,22 +128,25 @@ public class TestProjectiles extends SimpleApplicationAndStateAbs {
 		
 		// some boxes representing the axes (just some non-sense lol)
 		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.Red,0,0.5f),
-			5f,"X-Red"	,new Vector3f(1,0,0).mult(5));
+			5f,"X-Red"	,new Vector3f(1,0,0).mult(5), null);
 		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.Green,0,0.5f),
-			3f,"Y-Green",new Vector3f(0,1,0).mult(5));
+			3f,"Y-Green",new Vector3f(0,1,0).mult(5), null);
 		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.Blue,0,0.5f),
-			1f,"Z-Blue"	,new Vector3f(0,0,1).mult(5));
+			1f,"Z-Blue"	,new Vector3f(0,0,1).mult(5), null);
 		
 		// some small boxes to play with
-		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.randomColor(),0,0.5f),	0.750f,"SmallBoxV0750",new Vector3f(0,0,0));
-		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.randomColor(),0,0.5f),	0.500f,"SmallBoxV0500",new Vector3f(0,0,0));
-		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.randomColor(),0,0.5f),	0.250f,"SmallBoxV0250",new Vector3f(0,0,0));
-		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.randomColor(),0,0.5f),	0.125f,"SmallBoxV0125",new Vector3f(0,0,0));
+		spawnBox(0.750f);
+		spawnBox(0.500f);
+		spawnBox(0.250f);
+		spawnBox(0.125f);
+//		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.randomColor(),0,0.5f),	0.500f,"SmallBoxV0500",new Vector3f(0,0,0), null);
+//		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.randomColor(),0,0.5f),	0.250f,"SmallBoxV0250",new Vector3f(0,0,0), null);
+//		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.randomColor(),0,0.5f),	0.125f,"SmallBoxV0125",new Vector3f(0,0,0), null);
 	}
 	
-	public void spawnBox(){
+	public void spawnBox(float fVolume){
 		PhysicsI.i().spawnVolumeBox(ColorI.i().colorChangeCopy(ColorRGBA.randomColor(),0,0.5f),
-			3f,"Random",new Vector3f(0,0,0));
+			fVolume,"SmallBoxV"+fVolume,new Vector3f(0,0,0), null);
 	}
 	
 //	protected void initTestBox(ColorRGBA color, float fVolume, String str){
