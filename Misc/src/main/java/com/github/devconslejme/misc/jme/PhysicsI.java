@@ -49,6 +49,7 @@ import com.github.devconslejme.misc.MessagesI;
 import com.github.devconslejme.misc.QueueI;
 import com.github.devconslejme.misc.QueueI.CallableWeak;
 import com.github.devconslejme.misc.QueueI.CallableXAnon;
+import com.github.devconslejme.misc.jme.ParticlesI.EParticle;
 import com.github.devconslejme.misc.SimulationTimeI;
 import com.github.devconslejme.misc.StringI;
 import com.github.devconslejme.misc.TimeFormatI;
@@ -1160,14 +1161,14 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 		private Geometry geom;
 		
 		private Vector3f v3fLocalHit;
-		
-		
+		private Vector3f v3fRayCastFrom;
+		private Vector3f v3fRayCastDirOrTo;
 		
 //		private PhysicsRigidBody prb;
 		
 		public RayCastResultX(PhysicsRayTestResult resPhys,
 			CollisionResult resGeom, PhysicsData pd, Geometry geom, Vector3f v3fWrldHit,
-			Vector3f v3fNormal, float fDistance
+			Vector3f v3fNormal, float fDistance, Vector3f v3fFrom, Vector3f v3fTo
 		) {
 			super();
 			this.resPhys = resPhys;
@@ -1177,6 +1178,8 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 			this.v3fWrldHit = v3fWrldHit;
 			this.v3fNormal = v3fNormal;
 			this.fDistance = fDistance;
+			this.v3fRayCastFrom = v3fFrom;
+			this.v3fRayCastDirOrTo = v3fTo;
 			
 			//TODO could the geometry not be aligned with the current physics position/rotation
 			if(pd!=null)v3fLocalHit = pd.getGeomOriginalInitialLink().worldToLocal(getWHitPos(),null);
@@ -1199,7 +1202,13 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 		
 		@Override
 		public String toString() {
-			return pd.toString();
+			return pd!=null ? "PD:"+pd.toString() : "Geom:"+geom.getName();
+		}
+		public Vector3f getfRayCastFrom() {
+			return v3fRayCastFrom;
+		}
+		public Vector3f getRayCastDirOrTo() {
+			return v3fRayCastDirOrTo;
 		}
 		public float getDistance() {
 			return fDistance;
@@ -1227,7 +1236,7 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 	 */
 	@SuppressWarnings("unchecked")
 	public ArrayList<RayCastResultX> rayCastSortNearest(Vector3f v3fFrom, Vector3f v3fToOrDirection, boolean bIsDirection, boolean bIgnoreProjectiles, boolean bFirstOnly, PhysicsData... apdSkip) {
-		ArrayList<RayCastResultX> apdrtrList = new ArrayList<RayCastResultX>();
+		ArrayList<RayCastResultX> aresxList = new ArrayList<RayCastResultX>();
 		Vector3f v3fTo = bIsDirection ? 
 			v3fFrom.add(v3fToOrDirection.normalize().mult(fPhysicsRayCastRange)) : 
 			v3fToOrDirection;
@@ -1246,14 +1255,14 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 				Vector3f v3fHit = v3fFrom.clone().interpolateLocal(v3fTo,result.getHitFraction());
 				RayCastResultX resultx = new RayCastResultX(
 					result, null, pdChk, pdChk.getGeomOriginalInitialLink(), v3fHit, result.getHitNormalLocal().clone(), 
-					v3fFrom.distance(v3fHit) 
+					v3fFrom.distance(v3fHit), v3fFrom, v3fTo
 				);
-				apdrtrList.add(resultx);
+				aresxList.add(resultx);
 				if(bFirstOnly)break;
 			}
 		}
 		
-		return apdrtrList;
+		return aresxList;
 	}
 	
 	protected Boolean threadPhysicsGroupGlueDetectProjectileNextHit(PhysicsData pdProjectile){
@@ -1268,6 +1277,12 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 			RayCastResultX resx = aresxList.get(0);
 			boolean bGlued = pdProjectile.checkGluedAt(resx);
 			
+			if(bGlued) {
+				ParticlesI.i().createAtMainThread(EParticle.Debris.s(), resx.getWHitPos(), 0.05f, 0.5f);
+			}else {
+				ParticlesI.i().createAtMainThread(EParticle.Fire.s(), resx.getWHitPos(), 0.05f, 1f);
+			}
+			
 //			boolean bDeflected = pdProjectile.isHasGlueTargetDeflected();
 			
 			/**
@@ -1281,6 +1296,7 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 				 */
 				pdProjectile.setStaticPhysics(); //no need to be nested on a spatial when glueing on static terrain TODO instead check if nearest has mass=0? but it may be temporary and be glued would work better...
 				pdProjectile.setPhysicsLocationAtMainThread(pdProjectile.getWorldGlueSpot());
+				pdProjectile.checkExplodeAtMainThread();
 //				pdProjectile.prb.setPhysicsLocation(pdProjectile.v3fWorldGlueSpot); //this positioning works precisely if done here, np, is easier, keep it here...
 			}
 			
@@ -1312,8 +1328,8 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 		return applyImpulseHitTarget(v3fPos,v3fDir,fImpulse);
 	}
 	public RayCastResultX applyImpulseHitTargetFromCam(Float fImpulse){
-		Vector3f v3fDir = AppI.i().getCamLookingAtDir();
-		Vector3f v3fPos = AppI.i().getCamWPos(0);
+		Vector3f v3fDir = AppI.i().getCamLookingAtDirCopy();
+		Vector3f v3fPos = AppI.i().getCamWPosCopy(0);
 		return applyImpulseHitTarget(v3fPos,v3fDir,fImpulse);
 	}
 	/**
@@ -1363,9 +1379,9 @@ public class PhysicsI implements PhysicsTickListener, PhysicsCollisionGroupListe
 //			return pd;
 //		}
 		ArrayList<RayCastResultX> a = rayCastSortNearest(
-			AppI.i().getCamWPos(0f), 
+			AppI.i().getCamWPosCopy(0f), 
 //			AppI.i().getCamWPos(0f).add(AppI.i().getCamLookingAtDir().mult(getPhysicsRayCastRange())), 
-			AppI.i().getCamLookingAtDir(), true,
+			AppI.i().getCamLookingAtDirCopy(), true,
 			bIgnoreProjectiles, bFirstOnly, apdSkip);
 		if(a.size()>0)return a.get(0);
 		return null;

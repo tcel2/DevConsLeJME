@@ -393,20 +393,24 @@ public class CharacterI {
 				updatePossessed(getTPF());
 //				updatePossessedBCC(getTPF());
 				
-				AppI.i().setCamFollow(getPossessedHead());
-				flycamx.setAllowMove(!keyContext.isPressed());
+				updateFlyCameraFollow();
 				
 				return true;
 			}
 		}).enableLoopMode();//.setDelaySeconds(0.1f);
 	}
 	
+	protected void updateFlyCameraFollow() {
+		AppI.i().setCamFollow(getPossessedHead());
+		flycamx.setAllowMove(!keyContext.isPressed());
+	}
+
 	protected void updatePossessed(float tpf) {
 		v3fMoveDirection.set(0,0,0);
 		if(!isPossessing())return;
 		
 		if(bForward!=null){
-			Vector3f v3f=AppI.i().getCamLookingAtDir();
+			Vector3f v3f=AppI.i().getCamLookingAtDirCopy();
 			v3f.y=0;
 			v3f.normalizeLocal();//.multLocal(getSpeed());
 			if(!bForward)v3f.negateLocal();
@@ -414,7 +418,7 @@ public class CharacterI {
 		}
 		
 		if(bStrafeLeft!=null){
-			Vector3f v3f=AppI.i().getCamLeftDir();
+			Vector3f v3f=AppI.i().getCamLeftDirCopy();
 			v3f.y=0;
 			v3f.normalizeLocal();//.multLocal(getSpeed());
 			if(!bStrafeLeft)v3f.negateLocal();

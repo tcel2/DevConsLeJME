@@ -46,7 +46,7 @@ import com.jme3.scene.Spatial;
 * @author Henrique Abdalla <https://github.com/AquariusPower><https://sourceforge.net/u/teike/profile/>
 */
 public class StringTextJmeI extends StringI {
-	public static StringTextJmeI i(){return GlobalManagerI.i().retrieveOverridingSupers(StringTextJmeI.class,true,StringI.class);}
+	public static StringTextJmeI i(){return GlobalManagerI.i().retrieveOverridingSupers(StringTextJmeI.class,null,StringI.class);}
 
 	private BitmapFont	bfDefaultMonoFontOverride;
 	
@@ -92,7 +92,8 @@ public class StringTextJmeI extends StringI {
    * @return
    */
   public BitmapFont loadFont(String strPath) {
-  	return GlobalManagerI.i().get(Application.class).getAssetManager().loadFont(strPath);
+  	return AppI.i().loadFont(strPath);
+//  	return GlobalManagerI.i().get(Application.class).getAssetManager().loadFont(strPath);
   }
 
 	public void recursivelyApplyTextNoWrap(Node nodeParent) {

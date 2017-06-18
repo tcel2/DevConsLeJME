@@ -31,16 +31,23 @@ import com.github.devconslejme.misc.QueueI;
 import com.github.devconslejme.misc.QueueI.CallableXAnon;
 import com.github.devconslejme.misc.SimulationTimeI;
 import com.github.devconslejme.misc.TimeFormatI;
+import com.github.devconslejme.misc.Annotations.Workaround;
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.AppState;
+import com.jme3.font.BitmapFont;
+import com.jme3.input.controls.InputListener;
+import com.jme3.input.controls.Trigger;
+import com.jme3.material.Material;
 import com.jme3.math.FastMath;
+import com.jme3.math.Quaternion;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.post.FilterPostProcessor;
 import com.jme3.post.filters.BloomFilter;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
+import com.jme3.texture.Texture;
 
 /**
  * to avoid direcly exposing things like the Camera object preventing configuring it from anywhere
@@ -57,6 +64,7 @@ public class AppI {
 	private FilterPostProcessor	fpp;
 	private BloomFilter	bloomFilter;
 	private boolean bLimitScreenCoordinates;
+	private float fMaxFrustum=1000;
 	
 	public void configure(Application app){
 		this.app=app;
@@ -69,7 +77,16 @@ public class AppI {
 	public void setBloomFilterEnabled(boolean enabled) {
 		bloomFilter.setEnabled(enabled);
 	}
-
+	
+	/**
+	 * frustum far will be near * maxFrustum to avoid glitches TODO test case, transparencies? shadows? with frustum diff > 10000?
+	 * @param fFrustumNearBase
+	 */
+	public void setCameraFrustum(float fFrustumNearBase) {
+		app.getCamera().setFrustumNear(fFrustumNearBase);
+		app.getCamera().setFrustumFar(fFrustumNearBase*getMaxFrustum());
+	}
+	
 	private void initFilters() {
     fpp = new FilterPostProcessor(app.getAssetManager());
     bloomFilter = new BloomFilter(BloomFilter.GlowMode.Objects);
@@ -129,14 +146,14 @@ public class AppI {
 		return app.getCamera().getWorldCoordinates(new Vector2f(v3fScreenPos.x,v3fScreenPos.y), v3fScreenPos.z);
 	}
 	
-	public Vector3f getCamWPos(Vector3f v3fDisplacementInFront){
+	public Vector3f getCamWPosCopy(Vector3f v3fDisplacementInFront){
 		return app.getCamera().getLocation()
 			.add(app.getCamera().getDirection().mult(v3fDisplacementInFront.z))
 			.add(app.getCamera().getLeft().mult(v3fDisplacementInFront.x))
 			.add(app.getCamera().getUp().mult(v3fDisplacementInFront.y))
 		;
 	}
-	public Vector3f getCamWPos(float fInFrontDistZ){
+	public Vector3f getCamWPosCopy(float fInFrontDistZ){
 		return app.getCamera().getLocation().add(app.getCamera().getDirection().mult(fInFrontDistZ));
 	}
 	
@@ -157,16 +174,16 @@ public class AppI {
 	 * @return
 	 */
 	public Vector3f placeAtCamWPos(Spatial spt,float fInFrontDistZ,boolean bLookAtDir) {
-		spt.setLocalTranslation(getCamWPos(fInFrontDistZ));
+		spt.setLocalTranslation(getCamWPosCopy(fInFrontDistZ));
 		if(bLookAtDir){
-			spt.lookAt(getCamWPos(fInFrontDistZ*2f),Vector3f.UNIT_Y); //if z dist is negative will work too
+			spt.lookAt(getCamWPosCopy(fInFrontDistZ*2f),Vector3f.UNIT_Y); //if z dist is negative will work too
 		}
 		return spt.getWorldTranslation();
 	}
 	public Vector3f placeAtCamWPos(Spatial spt,Vector3f v3fDisplacementInFront,boolean bLookAtDir) {
-		spt.setLocalTranslation(getCamWPos(v3fDisplacementInFront));
+		spt.setLocalTranslation(getCamWPosCopy(v3fDisplacementInFront));
 		if(bLookAtDir){
-			spt.lookAt(getCamWPos(v3fDisplacementInFront.z*2f),Vector3f.UNIT_Y); //if z dist is negative will work too
+			spt.lookAt(getCamWPosCopy(v3fDisplacementInFront.z*2f),Vector3f.UNIT_Y); //if z dist is negative will work too
 		}
 		return spt.getWorldTranslation();
 	}
@@ -185,17 +202,21 @@ public class AppI {
 		return sappOpt.getRootNode();
 	}
 
-	public Vector3f getCamLookingAtDir() {
+	public Vector3f getCamLookingAtDirCopy() {
 		return app.getCamera().getDirection().clone();
 	}
 	
-	public Vector3f getCamLeftDir() {
+	public Vector3f getCamLeftDirCopy() {
 		return app.getCamera().getLeft().clone();
 	}
 
 	public AppI setCamFollow(Spatial spt) {
 		this.sptCamFollowMove=spt;
 		return this;
+	}
+	
+	public Spatial getCamFollow() {
+		return sptCamFollowMove;
 	}
 
 	public Node getGuiNode() {
@@ -210,6 +231,93 @@ public class AppI {
 	public AppI setLimitScreenCoordinates(boolean bLimitScreenCoordinates) {
 		this.bLimitScreenCoordinates = bLimitScreenCoordinates;
 		return this; 
+	}
+
+	public float getMaxFrustum() {
+		return fMaxFrustum;
+	}
+
+	public AppI setMaxFrustum(float fMaxFrustum) {
+		this.fMaxFrustum = fMaxFrustum;
+		return this; 
+	}
+
+//	public AssetManager getAssetManager() {
+//		return app.getAssetManager();
+//	}
+
+	public Material newMaterial(String string) {
+		return new Material(app.getAssetManager(),string);
+	}
+
+	public boolean removeMapping(String str) {
+		if(app.getInputManager().hasMapping(str)){
+			app.getInputManager().deleteMapping(str);
+			return true;
+		}
+		return false;
+	}
+
+	public void addKeyMappingAndListener(String strMapping, Trigger tg, InputListener acl) {
+		if(!app.getInputManager().hasMapping(strMapping)){
+			app.getInputManager().addMapping(strMapping, tg);
+		}
+		
+		/**
+		 * if the "keycode id" mapping already existed, it will just add a listener to it!
+		 */
+		app.getInputManager().addListener(acl, strMapping);
+	}
+
+	public long getTimerResolution() {
+		return app.getTimer().getResolution();
+	}
+
+	public long getTime() {
+		return app.getTimer().getTime();
+	}
+
+	public Quaternion getCamRotCopy() {
+		return app.getCamera().getRotation().clone();
+	}
+
+	public BitmapFont loadFont(String strPath) {
+		return app.getAssetManager().loadFont(strPath);
+	}
+
+	public long getTimeNano() {
+		assert app.getTimer().getResolution() == 1000000000;
+		return getTime();
+	}
+
+	public <T extends AppState> T getState(Class<T> cl) {
+		return app.getStateManager().getState(cl);
+	}
+
+	public float getTimeInSeconds() {
+		return app.getTimer().getTimeInSeconds();
+	}
+
+	@Workaround
+	public void setCursorVisible(boolean bEnable) {
+		/**
+		 * Inversed request first!
+		 * this trick is required to grant the cursor visibility state will
+		 * actually be modified/applied/changed, otherwise it would be ignored as 
+		 * the internal boolean would not have changed!
+		 */
+		app.getInputManager().setCursorVisible(!bEnable);
+		
+		// apply requested state
+		app.getInputManager().setCursorVisible(bEnable);
+	}
+
+	public boolean isInputManagerReady() {
+		return app.getInputManager()!=null;
+	}
+
+	public Texture loadTexture(String string) {
+		return app.getAssetManager().loadTexture(string);
 	}
 	
 }
