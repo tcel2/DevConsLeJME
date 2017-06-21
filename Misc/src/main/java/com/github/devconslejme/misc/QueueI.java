@@ -29,25 +29,45 @@ package com.github.devconslejme.misc;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.concurrent.Callable;
 
 import com.github.devconslejme.misc.Annotations.SimpleVarReadOnly;
+import com.github.devconslejme.misc.QueueI.EQPriority;
 
 /**
  * Queue is mainly usefull for lazy initializations that require pre-conditions.
  * But this one can be used also for delayed loops and other things.
  * 
- * TODO create parallel queues of stuff that can be processed outside of the main thread
+ * TODO use another instance of QueueI in another thread than Main, just to exemplify initially
  * TODO work with java.util.concurrent.DelayQueue?
+ * 
  * @author Henrique Abdalla <https://github.com/AquariusPower><https://sourceforge.net/u/teike/profile/>
  */
 public class QueueI {
 	public static QueueI i(){return GlobalManagerI.i().get(QueueI.class);}
 	
+	public static enum EQPriority{ //THESE ORDER IS IMPORTANT!!!
+		Top,
+		High,
+		Normal,
+		Low,
+		Botom,
+		;
+	}
+	
 	ArrayList<CallableX> acxList = new ArrayList<CallableX>();
 //	private Application	app;
 	private long	lTimeResolution;
 	private long	lCurrentTime;
+	private boolean bSortQueueOnce;
+	private Comparator<CallableX> cmpPriority = new Comparator<CallableX>() {
+		@Override
+		public int compare(CallableX o1, CallableX o2) {
+			return o1.eqp.compareTo(o2.eqp);
+		}
+	};
 	
 	public static interface CallableWeak<V> extends Callable<V>{
 		/**
@@ -124,6 +144,8 @@ public class QueueI {
 		
 		private static String strLastUId="0";
 //		private boolean bDone;
+		
+		private EQPriority eqp = EQPriority.Normal;
 		
 //		/**
 //		 * TODO why this was necessary after implementing SELF generics? otherwise it would return Object...
@@ -421,6 +443,14 @@ public class QueueI {
 			this.lFailLimitToWarn = lFailLimit;
 			return getThis(); 
 		}
+		public EQPriority getPriority() {
+			return eqp;
+		}
+		public SELF setPriority(EQPriority eqp) {
+			if(this.eqp!=eqp)QueueI.i().bSortQueueOnce=true;
+			this.eqp = eqp;
+			return getThis(); 
+		}
 		
 	}
 	
@@ -491,6 +521,8 @@ public class QueueI {
 	@SuppressWarnings("unchecked")
 	public void update(long lCurrentTime, float fTPF) {
 		this.lCurrentTime=lCurrentTime;
+		
+		Collections.sort(acxList,cmpPriority);
 		
 		for(CallableX<? extends CallableWeak<Boolean>> cx:acxList.toArray(new CallableX[0])){
 			cx.setTPF(fTPF);

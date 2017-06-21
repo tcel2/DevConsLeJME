@@ -26,14 +26,20 @@
 */
 package com.github.devconslejme.misc.jme;
 
+import com.github.devconslejme.misc.Annotations.ToDo;
 import com.github.devconslejme.misc.GlobalManagerI;
+import com.github.devconslejme.misc.MessagesI;
 import com.github.devconslejme.misc.QueueI;
 import com.github.devconslejme.misc.QueueI.CallableXAnon;
 import com.github.devconslejme.misc.jme.ArrowGeometry.EFollowMode;
 import com.jme3.bounding.BoundingSphere;
+import com.jme3.bounding.BoundingVolume;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.Quaternion;
+import com.jme3.math.Transform;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.queue.RenderQueue.Bucket;
+import com.jme3.scene.BatchNode;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
@@ -47,14 +53,104 @@ public class GeometryI {
 	public static GeometryI i(){return GlobalManagerI.i().get(GeometryI.class);}
 
 	public static class GeometryX extends Geometry{
+		private Mesh meshWhenStatic;
+		private Mesh meshWhenDynamic;
+		
+		@Override
+		public GeometryX clone() {
+			GeometryX gx = (GeometryX)super.clone();
+			gx.meshWhenDynamic=meshWhenDynamic;
+			gx.meshWhenStatic=meshWhenStatic;
+			PhysicsData pd = UserDataI.i().getMustExistOrNull(this, PhysicsData.class);
+			if(pd!=null)UserDataI.i().putSafelyMustNotExist(gx, pd);
+			return gx;
+		}
+		
 		public GeometryX(String name, Mesh mesh) {
 			super(name, mesh);
 		}
 		
+		public GeometryX(String string) {
+			super(string);
+		}
+
 		public GeometryX setNameX(String name) {
 			super.setName(name);
 			return this;
 		}
+
+		public Mesh getMeshWhenStatic() {
+			return meshWhenStatic;
+		}
+
+		public GeometryX setMeshWhenStatic(Mesh meshWhenStatic) {
+			this.meshWhenStatic = meshWhenStatic;
+			return this; 
+		}
+
+		public Mesh getMeshWhenDynamic() {
+			return meshWhenDynamic;
+		}
+
+		public GeometryX setMeshWhenDynamic(Mesh meshWhenDynamic) {
+			this.meshWhenDynamic = meshWhenDynamic;
+			return this; 
+		}
+		
+		public boolean isWorldBoundingSphere() {
+			return super.getWorldBound() instanceof BoundingSphere;
+		}
+		
+		Node nodeCorrect = new Node();
+		@Override
+		public BoundingVolume getWorldBound() {
+			warnBatchNodeParentProblem();
+			return super.getWorldBound();
+		}
+		
+		/**
+		 * find a workaround as done for {@link #getWorldTranslation()}
+		 */
+		@ToDo
+		private void warnBatchNodeParentProblem() {
+			if(getParent() instanceof BatchNode)MessagesI.i().warnMsg(this, "inside batchnode, world bound it may not be correct...", this);
+		}
+
+		@Override
+		public Quaternion getWorldRotation() {
+			warnBatchNodeParentProblem();
+			return super.getWorldRotation();
+		}
+		
+		@Override
+		public Transform getWorldTransform() {
+			warnBatchNodeParentProblem();
+			return super.getWorldTransform();
+		}
+		
+		@Override
+		public Vector3f getWorldTranslation() {
+			if(getParent() instanceof BatchNode) {
+				/**
+				 * IMPORTANT!!!
+				 * inside the batch node, the geometries are not updated as that batch node moves on the world,
+				 * this means their world bound are of the last glue; the last batch() update doesnt change that!
+				 * so the world bound stored is of before being added to the batch node!
+				 * TODO right?
+				 */
+
+//				nodeCorrectWPos.setLocalTranslation(getLocalTranslation());
+				return getParent().localToWorld(getLocalTranslation(),null);
+			}else {
+				return super.getWorldTranslation();
+			}
+		}
+		
+//		@Override
+//		public Geometry clone() {
+//			GeometryX geomClone = super.clone();
+//			geomClone.meshw
+//		}
 	}
 	
 	public <T extends Geometry> T create(Mesh mesh, ColorRGBA color) {

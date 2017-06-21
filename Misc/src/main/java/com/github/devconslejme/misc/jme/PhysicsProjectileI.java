@@ -26,6 +26,7 @@
 */
 package com.github.devconslejme.misc.jme;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 import com.github.devconslejme.misc.GlobalManagerI;
@@ -38,14 +39,18 @@ import com.github.devconslejme.misc.QueueI;
 import com.github.devconslejme.misc.QueueI.CallableXAnon;
 import com.github.devconslejme.misc.jme.ActivatorI.ActivetableListenerAbs;
 import com.github.devconslejme.misc.jme.ColorI.EColor;
+import com.github.devconslejme.misc.jme.DecalI.EDecal;
+import com.github.devconslejme.misc.jme.GeometryI.GeometryX;
 import com.github.devconslejme.misc.jme.ParticlesI.EParticle;
 import com.github.devconslejme.misc.jme.PhysicsI.ImpTorForce;
+import com.jme3.bounding.BoundingBox;
 import com.jme3.bounding.BoundingSphere;
 import com.jme3.bounding.BoundingVolume;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
+import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
 import com.jme3.scene.SimpleBatchNode;
 import com.jme3.scene.Spatial;
@@ -62,17 +67,19 @@ public class PhysicsProjectileI {
 	private int iProjectileMaxLifeTimeMultiplier=100;
 //	private PhysicsThrowProjectiles ppCamDevDbgTst;
 	private PhysicsThrowProjectiles ppFromCamCurrent;
-	private Geometry geomProjectileFactory;
+	private GeometryX geomProjectileFactory;
 	private float fDefaultGravityDivTrick=1f;
 	private float fDefaultDesiredSpeed=10f;
 	private int iDefaultProjectilesPerSecond=1;
 	private boolean bGlowingProjectile;
+	private boolean bAllowExplosionCascade;
+	private boolean bAllProjectilesAreInstableFun;
 	
 //	public static class SimpleBatchNode
 	
 	public static class PhysicsThrowProjectiles{
 		private int	iProjectilesPerSecond; 
-		private Geometry	geomProjectileFactory;
+		private GeometryX	geomProjectileFactory;
 //		private Matter mt;
 		private float fDesiredSpeed;
 //		private float fRadius;
@@ -98,6 +105,13 @@ public class PhysicsProjectileI {
 			this.mts=mts;
 			this.fGravityDivTrick=PhysicsProjectileI.i().getDefaultGravityDivTrick(); //TODO if the velocity becomes too low, like a shot straight up that begins to fall, or after hitting something, it's gravity should be restored to normal gravity to not look weird like anything else falling faster than a bullet...
 			this.geomProjectileFactory=PhysicsProjectileI.i().getDefaultProjectileFactory();
+//			this.geomProjectileFactory.setMeshWhenStatic(new BoundingBox())
+//			if(bForceBox || Box.class.isInstance(mesh)) {
+//				mesh.setBound(new BoundingBox());
+//			}else {
+//				mesh.setBound(new BoundingSphere());
+//			}
+
 		}
 
 		public int getProjectilesPerSecond() {
@@ -111,7 +125,7 @@ public class PhysicsProjectileI {
 	}
 	
 	public void configure(){
-		sbnProjectilesAtWorld = new SimpleBatchNode("BatchNode");
+		sbnProjectilesAtWorld = new SimpleBatchNode("StaticTerrainWorldBatchNode");
 		AppI.i().getRootNode().attachChild(sbnProjectilesAtWorld);
 		
     KeyBindCommandManagerI.i().putBindCommandsLater("Space",new CallBoundKeyCmd(){
@@ -122,18 +136,22 @@ public class PhysicsProjectileI {
 		);
 	}
 	
-	public Geometry getDefaultProjectileFactory() {
+	public GeometryX getDefaultProjectileFactory() {
 		if(this.geomProjectileFactory==null) {
 			float fRadius=0.1f;
 //			float fPhysBoundsScaleDiv=4f;
 			
 			float fScaleXY=0.25f;
-			geomProjectileFactory = GeometryI.i().create(new Sphere(3,4,fRadius), ColorRGBA.Cyan);
+			geomProjectileFactory = GeometryI.i().create(new Sphere(3,4,fRadius), ColorRGBA.Cyan, false, new GeometryX("projectile"));
 			geomProjectileFactory.scale(fScaleXY,fScaleXY,1f); //this wont affect the bounding sphere
 			geomProjectileFactory.setModelBound(new BoundingSphere(fRadius*fScaleXY,new Vector3f())); //this will become a tiny collider
 			if(isGlowingProjectile()) {
 				geomProjectileFactory.getMaterial().setColor(EColor.GlowColor.s(), ColorRGBA.Blue.mult(10)); //requires the bloom post processor with glow objects mode
 			}
+			Mesh meshStatic = geomProjectileFactory.getMesh().clone();
+			meshStatic.setBound(new BoundingBox());
+			meshStatic.updateBound();
+			geomProjectileFactory.setMeshWhenStatic(meshStatic);
 		}
 		
 		return geomProjectileFactory;
@@ -195,7 +213,7 @@ public class PhysicsProjectileI {
 		PhysicsGun pg = new PhysicsGun();
 		pg.pp=pp;
 		
-		Geometry geom = GeometryI.i().create(MeshI.i().cylinder(fLengthMeters,0.15f), ColorRGBA.Yellow);
+		GeometryX geom = GeometryI.i().create(MeshI.i().cylinder(fLengthMeters,0.15f), ColorRGBA.Yellow, false, new GeometryX("PhysicsGun"));
 		geom.scale(0.25f,0.5f,1f);
 		geom.setName("PhysicsGun");
 		AppI.i().getRootNode().attachChild(geom);
@@ -318,12 +336,12 @@ public class PhysicsProjectileI {
 		return pd;
 	}
 	public PhysicsData prepareProjectile(PhysicsThrowProjectiles pp){
-		Geometry geomClone = pp.geomProjectileFactory.clone();
+		GeometryX geomClone = pp.geomProjectileFactory.clone();
 		geomClone.setName("Projectile");
 		sbnProjectilesAtWorld.attachChild(geomClone); //AppI.i().getRootNode().attachChild(geomClone);
 		sbnProjectilesAtWorld.batch();
 		
-		assert geomClone.getWorldBound() instanceof BoundingSphere : "the fastest collider calculus if for spheres, so projectiles must use it";
+		assert geomClone.isWorldBoundingSphere() : "the fastest collider calculus is for spheres, so projectiles must use it";
 		
 		PhysicsData pd = PhysicsI.i().imbueFromWBounds(geomClone, pp.mts, null);
 //		geomClone.scale(pp.fPhysBoundsScaleDiv); //to restore the good looking size
@@ -333,6 +351,8 @@ public class PhysicsProjectileI {
 		
 		pd.setProjectile(true);
 //		PhysicsI.i().hmProjectiles.put(pd.getPRB(), pd);
+		
+		if(isAllProjectilesAreInstableFun())pd.setInstableExplode(true);
 		
 		PhysicsI.i().assimilatePhysicsData(pd);
 		
@@ -344,23 +364,35 @@ public class PhysicsProjectileI {
 		return pd;
 	}
 	
-	protected void reparentProjectileLater(SimpleBatchNode nodeNewParent, Geometry sptProjectile){
-		QueueI.i().enqueue(new CallableXAnon() {
-			@Override
-			public Boolean call() {
-				reparentProjectileLater(nodeNewParent, sptProjectile);
-				return true;
-			}
-		});
+//	protected void reparentProjectileLater(SimpleBatchNode nodeNewParent, Geometry sptProjectile){
+//		QueueI.i().enqueue(new CallableXAnon() {
+//			@Override
+//			public Boolean call() {
+//				reparentProjectile(nodeNewParent, sptProjectile);
+//				return true;
+//			}
+//		});
+//	}
+	
+	private void destroyProjectile(PhysicsData pdWhat) {
+		reparentProjectile(null, pdWhat);
 	}
-	protected void reparentProjectile(SimpleBatchNode nodeNewParent, Geometry sptProjectile){
-		SimpleBatchNode previousParent = (SimpleBatchNode)sptProjectile.getParent();
+	
+	protected void reparentProjectile(SimpleBatchNode nodeNewParent, PhysicsData pdWhat){
+		GeometryX geomWhat = pdWhat.getInitialOriginalGeometry();
+		SimpleBatchNode previousParent = (SimpleBatchNode)geomWhat.getParent();
 		
 		if(nodeNewParent!=null){
-			nodeNewParent.attachChild(sptProjectile);
+			if(nodeNewParent==sbnProjectilesAtWorld) {
+//				Vector3f v3fWPos=previousParent.localToWorld(geomWhat.getLocalTranslation(),null);
+//				geomWhat.setLocalTranslation(v3fWPos);
+				geomWhat.setLocalTranslation(geomWhat.getWorldTranslation());
+			}
+			nodeNewParent.attachChild(geomWhat);
 			nodeNewParent.batch();
 		}else {
-			sptProjectile.removeFromParent();
+			geomWhat.removeFromParent();
+			PhysicsI.i().removeFromPhysicsSpace(geomWhat);
 		}
 		
 		if(previousParent!=null)previousParent.batch();
@@ -388,16 +420,20 @@ public class PhysicsProjectileI {
 		
 		Geometry geomWhat = pdWhat.getInitialOriginalGeometry();
 		
-		PhysicsI.i().removeFromPhysicsSpace(geomWhat); //this prevents further updates from physics space
+		if(pdGlueWhere.isTerrain()) { //terrain ones are insta static with mass 0 np
+			PhysicsI.i().applyStaticColliderFromGeometryBounds(pdWhat);
+		}else {
+			PhysicsI.i().removeFromPhysicsSpace(geomWhat); //this prevents further updates from physics space
+		}
 		
 		if(pdGlueWhere.isEnclosed() && !pdGlueWhere.isTerrain()){ //will glue at dynamic parent surface
-			if(pdGlueWhere.getSBNodeGluedProjectiles()==null){
+			if(pdGlueWhere.getSBatchNodeGluedProjectilesOnMe()==null){
 				pdGlueWhere.setSBNodeGluedProjectiles(new SimpleBatchNode(SimpleBatchNode.class.getName()+":LocalGluedProjectiles"));
-				((Node)pdGlueWhere.getSpatialWithPhysics()).attachChild(pdGlueWhere.getSBNodeGluedProjectiles());
+				((Node)pdGlueWhere.getSpatialWithPhysics()).attachChild(pdGlueWhere.getSBatchNodeGluedProjectilesOnMe());
 			}
 			
 			Quaternion quaWhatWRotBkp = geomWhat.getWorldRotation().clone();
-			reparentProjectile(pdGlueWhere.getSBNodeGluedProjectiles(), pdWhat.getInitialOriginalGeometry());
+			reparentProjectile(pdGlueWhere.getSBatchNodeGluedProjectilesOnMe(), pdWhat);
 			
 			PhysicsI.i().cancelDisintegration(pdWhat);
 			
@@ -432,60 +468,107 @@ public class PhysicsProjectileI {
 					
 					checkBuggyMissPlacedFew(pdWhat);
 					
-					checkExplodeOvercharge(pdWhat);
+					checkProjectilesClashInstabilityExplode(pdWhat);
 					
 					return true;
 				}
 			});
 		}
 	
-		pdWhat.setbGlueApplied(true);
+		pdWhat.setGlueApplied(true);
 	}
 	
-	public void checkExplodeOvercharge(PhysicsData pdWhat) {
+	public void checkProjectilesClashInstabilityExplode(PhysicsData pdWhat) {
 		if(!pdWhat.isProjectile())return;
 		
-		Geometry geomWhat = pdWhat.getGeomOriginalInitialLink();
+		GeometryX geomWhat = pdWhat.getInitialOriginalGeometry();
 		SimpleBatchNode sbParent = (SimpleBatchNode)geomWhat.getParent();
-//		if(pdWhat.getGeomOriginalInitialLink().getParent()!=sb) {
-//			sb=pdWhat.getGlueWhere().getSBNodeGluedProjectiles();
-//		}
-//		if(pdWhat.getGeomOriginalInitialLink().getParent()==sbnProjectilesAtWorld) {
-//			sb=sbnProjectilesAtWorld;
-//		}else {
 		if(sbParent==null)return;
+//		sbParent.batch();
 		
-		BoundingSphere bsWhat = (BoundingSphere)pdWhat.getGeomOriginalInitialLink().getWorldBound().clone();
-//		bs.setRadius(0.5f);
+		/**
+		 * IMPORTANT!!!
+		 * inside the batch node, the geometries are not updated as that batch node moves on the world,
+		 * this means their world bound are of the last glue; the last batch() update doesnt change that!
+		 * so the world bound stored is of before being added to the batch node!
+		 */
+		BoundingVolume bvWhatFixed = pdWhat.getInitialOriginalGeometry().getWorldBound().clone();
+		bvWhatFixed.setCenter(geomWhat.getLocalTranslation());
 		
+		float fPowerfulRadius=0.1f;
+//		boolean bExploded=false;
+		ArrayList<PhysicsData> apd = new ArrayList<PhysicsData>(); 
+		boolean bDoExplode=false;
 		for(Spatial sptOther:sbParent.getChildren()) {
-			if(sptOther==geomWhat)continue;
+			if(!GeometryX.class.isInstance(sptOther))continue;
+			GeometryX geomOther = (GeometryX)sptOther;
+			if(geomOther==geomWhat)continue; //ignore self
 			PhysicsData pdOther = PhysicsI.i().getPhysicsDataFrom(sptOther);
-			if(pdOther==null)continue;
+			if(pdOther==null)continue; // the batched mesh/geometry is also a child of the batch node, this skips it too
 			if(!pdOther.isProjectile())continue;
-			Vector3f v3fWGOther = pdOther.getWorldGlueSpot();
-			if(v3fWGOther==null)continue;
 			
-//			if(spt.getWorldBound().intersects(bs)) {
-//			if(sptOther.getWorldTranslation().distance(geomWhat.getWorldTranslation())<0.1f) {
-//			if(sptOther.getWorldTranslation().distance(geomWhat.getWorldTranslation())<0.1f) {
-			if(v3fWGOther.distance(pdWhat.getWorldGlueSpot()) < bsWhat.getRadius()*2f) {
-				reparentProjectileLater(null, (Geometry)sptOther);
-				reparentProjectileLater(null, (Geometry)pdWhat.getGeomOriginalInitialLink());
-//				ParticlesI.i().createAtMainThread(EParticle.ShockWave.s(), pdWhat.getPhysicsLocationCopy(), 1f, 0.25f);
-//				ParticlesI.i().createAtMainThread(EParticle.ShockWave.s(), geomWhat.getWorldTranslation(), 1f, 0.25f);
-				ParticlesI.i().createAtMainThread(EParticle.ShockWave.s(), pdWhat.getWorldGlueSpot(), 1f, 0.25f);
-				break;
+			BoundingVolume bvOtherFixed = geomOther.getWorldBound().clone();
+			bvOtherFixed.setCenter(geomOther.getLocalTranslation());
+			
+			if(bvWhatFixed.getCenter().distance(bvOtherFixed.getCenter()) < fPowerfulRadius*pdWhat.getPowerfulRadiusMultiplier()) {
+				apd.add(pdOther);
+			}
+			
+			if(!bDoExplode) {
+				if(pdWhat.isMarkedToExplode()) {
+					bDoExplode=true;
+				}else
+				if(pdWhat.isInstableExplode() && bvOtherFixed.intersects(bvWhatFixed)) { //Instability: this begins the automatic explosion cascade
+					if(!apd.contains(pdWhat))apd.add(pdWhat); //so do it later
+					apd.add(pdOther);
+					bDoExplode=true;
+				}
+				
+				if(bDoExplode) {
+					if(pdWhat.isMarkedToExplode())explode(pdWhat,fPowerfulRadius,2f);
+//					//TODO terrain ones are not working why?
+//					ParticlesI.i().createAtMainThread(EParticle.Smoke.s(), pdWhat.getSpatialWithPhysics(), 0.1f, 100f);
+//					if(!pdWhat.isMarkedToExplode())break; //wont break to look for others nearby
+				}
+			}
+		}
+		
+		if(bDoExplode && isAllowExplosionCascade()) {
+			//cascade
+			for(PhysicsData pd:apd) {
+				pd.markToExplode();
+				pd.checkExplodeAtMainThread();
+				ParticlesI.i().createAtMainThread(EParticle.Smoke.s(), pd.getSpatialWithPhysics(), 0.1f, 100f);
 			}
 		}
 	}
+	
+	public void explode(PhysicsData pdWhat, float fMinRadius, float fMaxRadius) {
+		Vector3f v3fPos = null;
+		GeometryX geomWhat = pdWhat.getInitialOriginalGeometry();
+		if(pdWhat.getGlueWhere().isTerrain()) {
+//			v3fPos = pdWhat.getInstaTempWorldGlueSpot();
+			v3fPos = geomWhat.getWorldTranslation();
+			DecalI.i().createAtMainThread(null,v3fPos,
+				geomWhat.getWorldRotation().getRotationColumn(2),
+				geomWhat.getWorldRotation().getRotationColumn(1),
+				EDecal.Exploded);
+			destroyProjectile(pdWhat);
+		}else {
+			reparentProjectile(sbnProjectilesAtWorld, pdWhat); //to position properly in the world
+			v3fPos = geomWhat.getWorldTranslation().clone();
+			destroyProjectile(pdWhat);
+		}
+		ParticlesI.i().createAtMainThread(EParticle.ShockWave.s(), v3fPos, 1f, null);
+		PhysicsI.i().pushAllAround(v3fPos, pdWhat.getExplosionForce(), fMinRadius, fMaxRadius);
+	}
 
 	protected void checkBuggyMissPlacedFew(PhysicsData pdWhat) {
-		BoundingVolume bvWhat = pdWhat.getGeomOriginalInitialLink().getWorldBound();
-		BoundingVolume bvWhere = pdWhat.getGlueWhere().getGeomOriginalInitialLink().getWorldBound();
+		BoundingVolume bvWhat = pdWhat.getInitialOriginalGeometry().getWorldBound();
+		BoundingVolume bvWhere = pdWhat.getGlueWhere().getInitialOriginalGeometry().getWorldBound();
 //		if(!pdWhat.getBoundingVolume().intersects(pdWhat.getGlueWhere().getBoundingVolume())){
 		if(!bvWhat.intersects(bvWhere)){
-			reparentProjectile(null, pdWhat.getGeomOriginalInitialLink());
+			destroyProjectile(pdWhat);
 			MessagesI.i().warnMsg(this, "purging still bugly placed projectile, TODO improve this..", bvWhat, bvWhere, bvWhat.getCenter().distance(bvWhere.getCenter()));
 		}
 	}
@@ -582,6 +665,25 @@ public class PhysicsProjectileI {
 
 	public PhysicsProjectileI setGlowingProjectile(boolean bGlowingProjectile) {
 		this.bGlowingProjectile = bGlowingProjectile;
+		return this; 
+	}
+
+	public boolean isAllowExplosionCascade() {
+		return bAllowExplosionCascade;
+	}
+
+	public PhysicsProjectileI setAllowExplosionCascade(boolean bAllowExplosionCascade) {
+		this.bAllowExplosionCascade = bAllowExplosionCascade;
+		return this; 
+	}
+
+	public boolean isAllProjectilesAreInstableFun() {
+		return bAllProjectilesAreInstableFun;
+	}
+
+	public PhysicsProjectileI setAllProjectilesAreInstableFun(
+		boolean bAllProjectilesAreInstableFun) {
+		this.bAllProjectilesAreInstableFun = bAllProjectilesAreInstableFun;
 		return this; 
 	}
 	

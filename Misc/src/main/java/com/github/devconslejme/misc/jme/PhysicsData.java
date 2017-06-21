@@ -28,14 +28,17 @@ package com.github.devconslejme.misc.jme;
 
 import java.util.ArrayList;
 
-import com.github.devconslejme.game.CharacterI.LeviCharacter;
-import com.github.devconslejme.misc.ICompositeRestrictedAccessControl;
+import com.github.devconslejme.game.CharacterLeviPhysI.LeviCharacter;
 import com.github.devconslejme.misc.MainThreadI;
 import com.github.devconslejme.misc.MatterI.MatterStatus;
 import com.github.devconslejme.misc.QueueI.CallableWeak;
+import com.github.devconslejme.misc.QueueI.CallableX;
+import com.github.devconslejme.misc.QueueI.CallableXAnon;
 import com.github.devconslejme.misc.SimulationTimeI;
 import com.github.devconslejme.misc.TimeConvertI;
-import com.github.devconslejme.misc.jme.ParticlesI.EParticle;
+import com.github.devconslejme.misc.TimedDelay;
+import com.github.devconslejme.misc.jme.ColorI.EColor;
+import com.github.devconslejme.misc.jme.GeometryI.GeometryX;
 import com.github.devconslejme.misc.jme.PhysicsI.ImpTorForce;
 import com.github.devconslejme.misc.jme.PhysicsI.RayCastResultX;
 import com.jme3.bounding.BoundingBox;
@@ -44,6 +47,7 @@ import com.jme3.bounding.BoundingVolume;
 import com.jme3.bullet.collision.PhysicsCollisionObject;
 import com.jme3.bullet.collision.shapes.CollisionShape;
 import com.jme3.bullet.objects.PhysicsRigidBody;
+import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
@@ -61,9 +65,9 @@ public  class PhysicsData{
 	private boolean	bDisintegrated;
 	private Quaternion	quaWRotBkp;
 	private BoundingVolume	bv;
-	private BoundingBox	bb;
+//	private BoundingBox	bb;
 	private CollisionShape	cs;
-	private BoundingSphere	bs;
+//	private BoundingSphere	bs;
 	private PhysicsRigidBody	prb;
 	private boolean	bAllowDisintegration=false;
 	private Vector3f	v3fLastSafeSpot;
@@ -85,7 +89,7 @@ public  class PhysicsData{
 	private Quaternion	quaGlueWherePhysWRotAtImpact;
 	private Vector3f	v3fPosAtPreviousTick;
 	private MatterStatus	mts;
-	private Geometry	geomOriginalInitialLink;
+	private GeometryX	geomOriginalInitialLink;
 	private Node	nodexLink;
 	private int	iForceAwakePhysTickCount;
 	private int	iWaitPhysTicksB4Glueing=1;//1;
@@ -111,6 +115,9 @@ public  class PhysicsData{
 	private long lLastCollisionNano;
 	private float fNewFriction;
 	private float fMassBkp;
+	private boolean bForceExplode;
+	private boolean bInstableExplode;
+	private float fPseudoDiameter;
 	
 	/**
 	 * radians
@@ -145,7 +152,7 @@ public  class PhysicsData{
 		return this; 
 	}
 	
-	public PhysicsData(Node nodex, Geometry geom) {
+	public PhysicsData(Node nodex, GeometryX geom) {
 		this.nodexLink=nodex;
 		this.geomOriginalInitialLink=geom;
 //			this.v3fGravityBkp = new Vector3f(PhysicsI.i().getGravity());
@@ -300,7 +307,7 @@ public  class PhysicsData{
 		prb.setMass((float)this.mts.getMassKg());
 	}
 
-	public Geometry getInitialOriginalGeometry() {
+	public GeometryX getInitialOriginalGeometry() {
 		return geomOriginalInitialLink;
 	}
 
@@ -352,22 +359,53 @@ public  class PhysicsData{
 		if(v3f==null)v3f = PhysicsI.i().getGravityCopy().clone(); //restore the bkp
 		if(v3fNewGravity==null || !v3fNewGravity.equals(v3f)) {
 			v3fNewGravity = v3f.clone();
-			PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableWeak() {@Override	public Object call() {
+			enqueueUpdatePhysicsAtMainThread(new CallPhysSimple() {@Override	public Boolean call() {
 				applyNewGravityAtMainThread();
-				return null;
+				return true;
 			}});
-//			if(MainThreadI.i().isCurrentMainThread()) {
-//				applyNewGravityAtMainThread();
-//			}else {
-//				PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableWeak() {@Override	public Object call() {
-//					applyNewGravityAtMainThread();
-//					return null;
-//				}	});
-////				PhysicsI.i().apdGravityUpdtMainThreadQueue.add(this);
-//			}
 		}
 	}
 	
+	/**
+	 * this prevents the highly customizable callableX
+	 * as it may be called instantly, out of the queue
+	 */
+	private static abstract class CallPhysSimple implements CallableWeak{};
+	private void enqueueUpdatePhysicsAtMainThread(CallPhysSimple cx) {
+//		enqueueUpdatePhysicsAtMainThread(false, cx);
+//	}
+//	private void enqueueUpdatePhysicsAtMainThread(boolean bForceLater, CallPhysSimple cx) {
+		if(MainThreadI.i().isCurrentMainThread()) {
+			cx.call();
+		}else {
+			PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableXAnon() {
+				@Override
+				public Boolean call() {
+					cx.call();
+					return true;
+				}
+			});
+		}
+	}
+	private void enqueueUpdatePhysicsAtMainThreadForceLater(CallableX cx) {
+		PhysicsI.i().enqueueUpdatePhysicsAtMainThread(cx);
+	}
+//	private void enqueueUpdatePhysicsAtMainThread(boolean bForceLater, CallPhysSimple cx) {
+//		if(MainThreadI.i().isCurrentMainThread() && !bForceLater) {
+//			cx.call();
+////				throw new DetailedException("not using full queue powers");
+////			}
+//		}else {
+//			PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableXAnon() {
+//				@Override
+//				public Boolean call() {
+//					cx.call();
+//					return true;
+//				}
+//			});
+//		}
+//	}
+
 	public void applyNewDampingAtMainThread() {
 		MainThreadI.i().assertEqualsCurrentThread();
 		if(fNewLinearDamping!=null)this.prb.setLinearDamping(fNewLinearDamping);
@@ -379,17 +417,25 @@ public  class PhysicsData{
 	public void setNewDampingAtMainThread(Float fNewLinearDamping, Float fNewAngularDamping) {
 		this.fNewLinearDamping=fNewLinearDamping;
 		this.fNewAngularDamping=fNewAngularDamping;
-		PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableWeak() {@Override	public Object call() {
+		enqueueUpdatePhysicsAtMainThread(new CallPhysSimple() {@Override	public Boolean call() {
 			applyNewDampingAtMainThread();
-			return null;
+			return true;
 		}});
 	}
 	
 	public void checkExplodeAtMainThread() {
-		PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableWeak() {@Override	public Object call() {
-			PhysicsProjectileI.i().checkExplodeOvercharge(PhysicsData.this);
-			return null;
-		}});
+//		checkExplodeAtMainThread(false);
+//	}
+//	public void checkExplodeAtMainThread(boolean bForceLater) {
+//		enqueueUpdatePhysicsAtMainThread(bForceLater, new CallUpdPhysAtMainThread() {@Override	public Boolean call() {
+		enqueueUpdatePhysicsAtMainThreadForceLater(new CallableXAnon() {
+			private TimedDelay tdInstabilityGrouth = new TimedDelay(3f).setActive(true);
+			@Override	public Boolean call() {
+				if(!PhysicsData.this.isGlueApplied())return false; //this is required for the terrain/world stuck projectiles
+				if(!tdInstabilityGrouth.isReady(true))return false;
+				PhysicsProjectileI.i().checkProjectilesClashInstabilityExplode(PhysicsData.this);
+				return true;
+			}});
 	}
 
 	public PhysicsData setTempGravityTowards(Vector3f v3fGravityTargetSpot, Float fAcceleration) {
@@ -408,9 +454,9 @@ public  class PhysicsData{
 	}
 	public void setFrictionAtMainThread(float f) {
 		this.fNewFriction=f;
-		PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableWeak() {@Override	public Object call() {
+		enqueueUpdatePhysicsAtMainThread(new CallPhysSimple() {@Override	public Boolean call() {
 			applyNewFrictionAtMainThread();
-			return null;
+			return true;
 		}});
 	}
 	public void applyNewFrictionAtMainThread() {
@@ -423,33 +469,18 @@ public  class PhysicsData{
 	 */
 	public void setPhysicsLocationAtMainThread(Vector3f v3f) {
 		v3fNewPhysLocation=v3f.clone();
-		PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableWeak() {@Override	public Object call() {
+		enqueueUpdatePhysicsAtMainThread(new CallPhysSimple() {@Override	public Boolean call() {
 			applyNewPhysLocationAtMainThread();
-			return null;
+			return true;
 		}});
-//		if(MainThreadI.i().isCurrentMainThread()) {
-//			applyNewPhysLocationAtMainThread();
-//		}else {
-//			PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableWeak() {@Override	public Object call() {
-//				applyNewPhysLocationAtMainThread();
-//				return null;
-//			}	});
-////			PhysicsI.i().apdLocationUpdtMainThreadQueue.add(this);
-//		}
 	}
 	public void setPhysicsRotationAtMainThread(Quaternion qua) {
 		quaNewPhysRotation=qua.clone();
 //		CallableWeak cw = new CallableWeak() {@Override	public Object call() {
-		PhysicsI.i().enqueueUpdatePhysicsAtMainThread(new CallableWeak() {@Override	public Object call() {
+		enqueueUpdatePhysicsAtMainThread(new CallPhysSimple() {@Override	public Boolean call() {
 			applyNewPhysRotationAtMainThread();
-			return null;
+			return true;
 		}});
-//		if(MainThreadI.i().isCurrentMainThread()) {
-//			cw.call();
-//		}else {
-//			PhysicsI.i().enqueueUpdatePhysicsAtMainThread(cw);
-////			PhysicsI.i().apdRotationUpdtMainThreadQueue.add(this);
-//		}
 	}
 	
 	public Vector3f getPhysicsLocationCopy() {
@@ -468,7 +499,8 @@ public  class PhysicsData{
 	}
 
 	public void setPRB(PhysicsRigidBody prb) {
-		assert this.prb==null;
+		if(this.prb==prb)return;
+		assert this.prb==null || !this.prb.getCollisionShape().getClass().isAssignableFrom(prb.getCollisionShape().getClass());
 		this.prb=prb;
 	}
 
@@ -494,7 +526,7 @@ public  class PhysicsData{
 //			return this; 
 //		}
 
-	public SimpleBatchNode getSBNodeGluedProjectiles() {
+	public SimpleBatchNode getSBatchNodeGluedProjectilesOnMe() {
 		return sbnGluedProjectiles;
 	}
 
@@ -532,40 +564,41 @@ public  class PhysicsData{
 	}
 
 	public PhysicsData setBoundingVolume(BoundingVolume bv) {
-		assert this.bv==null;
+		// allow changing the bounding if the mesh bounding was changed only
+		assert this.bv==null || !geomOriginalInitialLink.getMesh().getBound().getClass().isAssignableFrom(this.bv.getClass());
 		this.bv = bv;
 		return this;
 	}
 
 	public BoundingBox getBoundingBox() {
-		return bb;
+		return (BoundingBox)bv;
 	}
 
-	public PhysicsData setAsBoundingBox() {
-		assert this.bb==null;
-		this.bb = (BoundingBox)bv;
-		return this;
-	}
+//	public PhysicsData setAsBoundingBox() {
+//		assert this.bb==null;
+//		this.bb = (BoundingBox)bv;
+//		return this;
+//	}
 
 	public CollisionShape getCollisionShape() {
 		return cs;
 	}
 
 	public PhysicsData setCollisionShape(CollisionShape cs) {
-		assert this.cs==null;
+//		assert this.cs==null;
 		this.cs = cs;
 		return this;
 	}
 
 	public BoundingSphere getBoundingSphere() {
-		return bs;
+		return (BoundingSphere)bv;
 	}
 
-	public PhysicsData setAsBoundingSphere() {
-		assert this.bs==null;
-		this.bs = (BoundingSphere)bv;
-		return this;
-	}
+//	public PhysicsData setAsBoundingSphere() {
+//		assert this.bs==null;
+//		this.bs = (BoundingSphere)bv;
+//		return this;
+//	}
 
 //	public boolean isbAllowDisintegration() {
 //		return bAllowDisintegration;
@@ -657,7 +690,7 @@ public  class PhysicsData{
 		return this;
 	}
 
-	public Vector3f getWorldGlueSpot() {
+	public Vector3f getInstaTempWorldGlueSpot() {
 		return v3fWorldGlueSpot;
 	}
 
@@ -678,7 +711,7 @@ public  class PhysicsData{
 		return bGlueApplied;
 	}
 
-	public PhysicsData setbGlueApplied(boolean bGlueApplied) {
+	public PhysicsData setGlueApplied(boolean bGlueApplied) {
 		this.bGlueApplied = bGlueApplied;
 		return this;
 	}
@@ -743,11 +776,11 @@ public  class PhysicsData{
 //			return this;
 //		}
 
-	public Geometry getGeomOriginalInitialLink() {
-		return geomOriginalInitialLink;
-	}
+//	public GeometryX getGeomOriginalInitialLink() {
+//		return geomOriginalInitialLink;
+//	}
 
-	public PhysicsData setGeomOriginalInitialLink(Geometry geomOriginalInitialLink) {
+	public PhysicsData setGeomOriginalInitialLink(GeometryX geomOriginalInitialLink) {
 		this.geomOriginalInitialLink = geomOriginalInitialLink;
 		return this;
 	}
@@ -888,7 +921,7 @@ public  class PhysicsData{
 		return prb.getLinearVelocity(); //is a copy
 	}
 
-	public PhysicsRigidBody getPRB(ICompositeRestrictedAccessControl cc) {
+	public PhysicsRigidBody getPRB(PhysicsI.CompositeControl cc) {
 		assert cc!=null;
 		return prb;
 	}
@@ -955,6 +988,43 @@ public  class PhysicsData{
 
 	}
 
+	public float getExplosionForce() {
+		return 10f;
+	}
 
+	public void markToExplode() {
+		this.bForceExplode=true;
+		geomOriginalInitialLink.getMaterial().setColor(EColor.Color.s(), new ColorRGBA(0.5f,0,0,1));
+		geomOriginalInitialLink.getMaterial().setColor(EColor.GlowColor.s(), ColorRGBA.Red.mult(10)); //TODO how to glow more/farer? 10 or 100 makes no diff
+	}
+
+	public boolean isMarkedToExplode() {
+		return bForceExplode;
+	}
+
+	public float getPowerfulRadiusMultiplier() {
+		return 2f;
+	}
+
+	public boolean isInstableExplode() {
+		return bInstableExplode;
+	}
+
+	public PhysicsData setInstableExplode(boolean bInstableExplode) {
+		this.bInstableExplode = bInstableExplode;
+		return this; 
+	}
+
+	public void setPseudoDiameter(float fPseudoDiameter) {
+		this.fPseudoDiameter = fPseudoDiameter;
+	}
+
+	public float getPseudoDiameter() {
+		return fPseudoDiameter;
+	}
+
+	public boolean isBoundingBox() {
+		return bv instanceof BoundingBox;
+	}
 }
 
